@@ -59,6 +59,8 @@
 
 #include <iostream>
 
+#include <sensor_msgs/JointState.h>
+
 namespace ros_control_ur {
 
 UrHardwareInterface::UrHardwareInterface(ros::NodeHandle& nh, UrDriver* robot) :
@@ -69,6 +71,9 @@ UrHardwareInterface::UrHardwareInterface(ros::NodeHandle& nh, UrDriver* robot) :
 	max_vel_change_ = 0.12; // equivalent of an acceleration of 15 rad/sec^2
 
 	ROS_INFO_NAMED("ur_hardware_interface", "Loaded ur_hardware_interface.");
+
+	jnt_state_publisher_ = nh.advertise<sensor_msgs::JointState>("measured_joint_states", 1);
+	jnt_state_publisher_2_ = nh.advertise<sensor_msgs::JointState>("ur10_commands", 1);
 }
 
 void UrHardwareInterface::init() {
@@ -88,6 +93,7 @@ void UrHardwareInterface::init() {
 	joint_position_.resize(num_joints_);
 	joint_velocity_.resize(num_joints_);
 	joint_effort_.resize(num_joints_);
+	joint_velocity_limits_.resize(num_joints_);
 	joint_position_command_.resize(num_joints_);
 	joint_velocity_command_.resize(num_joints_);
 	prev_joint_velocity_command_.resize(num_joints_);
@@ -115,7 +121,17 @@ void UrHardwareInterface::init() {
 						joint_state_interface_.getHandle(joint_names_[i]),
 						&joint_velocity_command_[i]));
 		prev_joint_velocity_command_[i] = 0.;
+
+		joint_velocity_limits_[i] = 2.0;//0.5*191*M_PI/180;
 	}
+
+	double vel_limit_alpha = 0.7;
+	joint_velocity_limits_[0] = vel_limit_alpha*131*M_PI/180;
+	joint_velocity_limits_[1] = vel_limit_alpha*131*M_PI/180;
+	joint_velocity_limits_[2] = vel_limit_alpha*191*M_PI/180;
+	joint_velocity_limits_[3] = vel_limit_alpha*191*M_PI/180;
+	joint_velocity_limits_[4] = vel_limit_alpha*191*M_PI/180;
+	joint_velocity_limits_[5] = vel_limit_alpha*191*M_PI/180;
 
 	// Create force torque interface
 	force_torque_interface_.registerHandle(
@@ -136,16 +152,32 @@ void UrHardwareInterface::read() {
 	vel = robot_->rt_interface_->robot_state_->getQdActual();
 	current = robot_->rt_interface_->robot_state_->getIActual();
 	tcp = robot_->rt_interface_->robot_state_->getTcpForce();
+
+	double pos_alpha = 0.1;
+	double vel_alpha = 0.3;
+	double eff_alpha = 0.1;
+	double frc_alpha = 0.1;
+	double trq_alpha = 0.1;
+
 	for (std::size_t i = 0; i < num_joints_; ++i) {
-		joint_position_[i] = pos[i];
-		joint_velocity_[i] = vel[i];
-		joint_effort_[i] = current[i];
+		joint_position_[i] = (1-pos_alpha)*pos[i] + pos_alpha*joint_position_[i];
+		joint_velocity_[i] = (1-vel_alpha)*vel[i] + vel_alpha*joint_velocity_[i];
+		joint_effort_[i] = (1-eff_alpha)*current[i] + eff_alpha*joint_effort_[i];
 	}
 	for (std::size_t i = 0; i < 3; ++i) {
-		robot_force_[i] = tcp[i];
-		robot_torque_[i] = tcp[i + 3];
+		robot_force_[i] = (1-frc_alpha)*tcp[i] + frc_alpha*robot_force_[i];
+		robot_torque_[i] = (1-trq_alpha)*tcp[i + 3] + trq_alpha*robot_torque_[i];
 	}
 
+	// publish unfiltered joint state data
+	sensor_msgs::JointState msg;
+	msg.header.stamp = ros::Time::now();
+	for (std::size_t i=0; i<num_joints_; ++i) {
+		msg.position.push_back(pos[i]);
+		msg.velocity.push_back(vel[i]);
+		msg.effort.push_back(current[i]);
+	}
+	jnt_state_publisher_.publish(msg);
 }
 
 void UrHardwareInterface::setMaxVelChange(double inp) {
@@ -156,6 +188,7 @@ void UrHardwareInterface::write() {
 	if (velocity_interface_running_) {
 		std::vector<double> cmd;
 		//do some rate limiting
+		//max_vel_change_ = 0.01;
 		cmd.resize(joint_velocity_command_.size());
 		for (unsigned int i = 0; i < joint_velocity_command_.size(); i++) {
 			cmd[i] = joint_velocity_command_[i];
@@ -165,11 +198,21 @@ void UrHardwareInterface::write() {
 					< prev_joint_velocity_command_[i] - max_vel_change_) {
 				cmd[i] = prev_joint_velocity_command_[i] - max_vel_change_;
 			}
+			if (cmd[i] > joint_velocity_limits_[i]) {
+				cmd[i] = joint_velocity_limits_[i];
+			} else if (cmd[i] < -joint_velocity_limits_[i]) {
+				cmd[i] = -joint_velocity_limits_[i];
+			}
 			prev_joint_velocity_command_[i] = cmd[i];
 		}
-		std::cerr << "UrHardwareInterface::write() | cmd = ";
-		for (int i=0; i<6; ++i) std::cerr << cmd[i] << ", ";
-		std::cerr << "\n";
+
+		sensor_msgs::JointState msg;
+		msg.header.stamp = ros::Time::now();
+		for (std::size_t i=0; i<joint_velocity_command_.size(); ++i) {
+			msg.velocity.push_back(cmd[i]);
+		}
+		jnt_state_publisher_2_.publish(msg);
+
 		robot_->setSpeed(cmd[0], cmd[1], cmd[2], cmd[3], cmd[4], cmd[5],  max_vel_change_*125);
 	} else if (position_interface_running_) {
 		robot_->servoj(joint_position_command_);
@@ -217,7 +260,7 @@ bool UrHardwareInterface::canSwitch(
 				ROS_ERROR(
 						"%s: An interface of that type (%s) is already running",
 						controller_it->name.c_str(),
-						controller_it->hardware_interface.c_str());
+						controller_it->claimed_resources.at(0).hardware_interface.c_str());
 				return false;
 			}
 			if (velocity_interface_running_) {
