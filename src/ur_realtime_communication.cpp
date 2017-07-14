@@ -105,7 +105,7 @@ void UrRealtimeCommunication::setSpeed(double q0, double q1, double q2,
 	}
 	else if( robot_state_->getVersion() >= 3.1 ) {
 		sprintf(cmd,
-				"speedj([%1.5f, %1.5f, %1.5f, %1.5f, %1.5f, %1.5f], %f)\n",
+				"speedj([%1.5f, %1.5f, %1.5f, %1.5f, %1.5f, %1.5f], %f, 0.02)\n",
 				q0, q1, q2, q3, q4, q5, acc);
 	}
 	else {
@@ -141,6 +141,7 @@ void UrRealtimeCommunication::run() {
 						sizeof(int));
 				robot_state_->unpack(buf);
 				if (safety_count_ == safety_count_max_) {
+					std::cerr << "safety count max exceeded\n";
 					setSpeed(0., 0., 0., 0., 0., 0.);
 				}
 				safety_count_ += 1;
