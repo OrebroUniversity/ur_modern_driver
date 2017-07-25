@@ -124,6 +124,7 @@ public:
 			sprintf(buf, "Max acceleration set to: %f [rad/sec²]",
 					max_vel_change * 125);
 			print_debug(buf);
+			std::cerr<<buf<<std::endl;	
 			hardware_interface_->setMaxVelChange(max_vel_change);
 		}
 		//Using a very high value in order to not limit execution of trajectories being sent from MoveIt!
