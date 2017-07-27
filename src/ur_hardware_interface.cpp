@@ -144,6 +144,37 @@ void UrHardwareInterface::init() {
 	registerInterface(&force_torque_interface_); // From RobotHW base class.
 	velocity_interface_running_ = false;
 	position_interface_running_ = false;
+
+#ifdef USE_ROBOTIQ_FT
+	ft_device_name_ = "";
+	nh_.getParam("hardware_interface/ft_sensor_device", ft_device_name_);
+	int max_retries_ = 100;
+	INT_8 bufStream[512];
+	robotiq_force_torque_sensor::ft_sensor msgStream;
+	INT_8 ret; 
+
+	//If we can't initialize, we return an error
+	ret = rq_sensor_state(max_retries_, ft_device_name_);
+	if(ret == -1)
+	{
+	    ROS_ERROR("could not connect to FT sensor!");
+	}
+
+	//Reads basic info on the sensor
+	ret = rq_sensor_state(max_retries_, ft_device_name_);
+	if(ret == -1)
+	{
+	    ROS_ERROR("could not connect to FT sensor!");
+	}
+
+	//Starts the stream
+	ret = rq_sensor_state(max_retries_, ft_device_name_);
+	if(ret == -1)
+	{
+	    ROS_ERROR("could not connect to FT sensor!");
+	}
+#endif
+
 }
 
 void UrHardwareInterface::read() {
@@ -164,10 +195,47 @@ void UrHardwareInterface::read() {
 		joint_velocity_[i] = (1-vel_alpha)*vel[i] + vel_alpha*joint_velocity_[i];
 		joint_effort_[i] = (1-eff_alpha)*current[i] + eff_alpha*joint_effort_[i];
 	}
+
+#ifdef USE_ROBOTIQ_FT
+	ret = rq_sensor_state(max_retries_, ft_device_name_);
+	if(ret == -1)
+	{
+	    ROS_ERROR("Could not read data from FT sensor, defaulting to inbuilt!");
+	    for (std::size_t i = 0; i < 3; ++i) {
+		robot_force_[i] = (1-frc_alpha)*tcp[i] + frc_alpha*robot_force_[i];
+		robot_torque_[i] = (1-trq_alpha)*tcp[i + 3] + trq_alpha*robot_torque_[i];
+	    }
+	} 
+	else {
+	    if(rq_sensor_get_current_state() == RQ_STATE_RUN)
+	    {
+		strcpy(bufStream,"");
+		msgStream = get_data();
+
+		if(rq_state_got_new_message())
+		{
+		    robot_force_[0] = msgStream.Fx;
+		    robot_force_[1] = msgStream.Fy;
+		    robot_force_[2] = msgStream.Fz;
+		    robot_torque_[0] = msgStream.Mx;
+		    robot_torque_[1] = msgStream.My;
+		    robot_torque_[2] = msgStream.Mz;
+		}
+	    } else {
+		ROS_ERROR("Could not receive data from FT sensor, defaulting to inbuilt!");
+		for (std::size_t i = 0; i < 3; ++i) {
+		    robot_force_[i] = (1-frc_alpha)*tcp[i] + frc_alpha*robot_force_[i];
+		    robot_torque_[i] = (1-trq_alpha)*tcp[i + 3] + trq_alpha*robot_torque_[i];
+		}
+	    }
+	}
+
+#else
 	for (std::size_t i = 0; i < 3; ++i) {
 		robot_force_[i] = (1-frc_alpha)*tcp[i] + frc_alpha*robot_force_[i];
 		robot_torque_[i] = (1-trq_alpha)*tcp[i + 3] + trq_alpha*robot_torque_[i];
 	}
+#endif
 
 	// publish unfiltered joint state data
 	sensor_msgs::JointState msg;

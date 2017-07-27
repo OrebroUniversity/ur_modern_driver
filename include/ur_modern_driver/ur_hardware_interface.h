@@ -69,6 +69,11 @@
 #include "do_output.h"
 #include "ur_driver.h"
 
+#ifdef USE_ROBOTIQ_FT
+#include "robotiq_force_torque_sensor/rq_sensor_state.h"
+#include "robotiq_force_torque_sensor/ft_sensor.h"
+#include "robotiq_force_torque_sensor/sensor_accessor.h"
+#endif
 namespace ros_control_ur {
 
 // For simulation only - determines how fast a trajectory is followed
@@ -134,7 +139,28 @@ protected:
 
 	ros::Publisher  jnt_state_publisher_;
 	ros::Publisher  jnt_state_publisher_2_;
+#ifdef USE_ROBOTIQ_FT
+	int max_retries_;
+	INT_8 bufStream[512];
+	robotiq_force_torque_sensor::ft_sensor msgStream;
+	INT_8 ret;
+	std::string ft_device_name_;
 
+	robotiq_force_torque_sensor::ft_sensor get_data(void)
+	{
+	    robotiq_force_torque_sensor::ft_sensor msgStream;
+
+	    msgStream.Fx = rq_state_get_received_data(0);
+	    msgStream.Fy = rq_state_get_received_data(1);
+	    msgStream.Fz = rq_state_get_received_data(2);
+	    msgStream.Mx = rq_state_get_received_data(3);
+	    msgStream.My = rq_state_get_received_data(4);
+	    msgStream.Mz = rq_state_get_received_data(5);
+
+	    return msgStream;
+	}
+
+#endif	
 };
 // class
 

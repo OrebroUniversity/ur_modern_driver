@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   trajectory_msgs
   ur_msgs
   tf
+  robotiq_force_torque_sensor
 )
 
 ## System dependencies are found with CMake's conventions
@@ -110,13 +111,15 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
 #  LIBRARIES ur_modern_driver
-  CATKIN_DEPENDS hardware_interface controller_manager actionlib control_msgs geometry_msgs roscpp sensor_msgs trajectory_msgs ur_msgs
+  CATKIN_DEPENDS hardware_interface controller_manager actionlib control_msgs geometry_msgs roscpp sensor_msgs trajectory_msgs ur_msgs robotiq_force_torque_sensor
   DEPENDS ur_hardware_interface
 )
 
 ###########
 ## Build ##
 ###########
+add_definitions(-DUSE_ROBOTIQ_FT)
+
 
 # check c++11 / c++0x
 include(CheckCXXCompilerFlag)
