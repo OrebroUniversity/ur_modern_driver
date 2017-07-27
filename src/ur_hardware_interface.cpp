@@ -148,10 +148,7 @@ void UrHardwareInterface::init() {
 #ifdef USE_ROBOTIQ_FT
 	ft_device_name_ = "";
 	nh_.getParam("hardware_interface/ft_sensor_device", ft_device_name_);
-	int max_retries_ = 100;
-	INT_8 bufStream[512];
-	robotiq_force_torque_sensor::ft_sensor msgStream;
-	INT_8 ret; 
+	max_retries_ = 100;
 
 	//If we can't initialize, we return an error
 	ret = rq_sensor_state(max_retries_, ft_device_name_);
@@ -197,6 +194,9 @@ void UrHardwareInterface::read() {
 	}
 
 #ifdef USE_ROBOTIQ_FT
+	//TODO: This should probably run in a separate thread an not block here!
+	//FIXME: If you see red in the command line, it is NOT safe to run the robot!
+	max_retries_ = 1;
 	ret = rq_sensor_state(max_retries_, ft_device_name_);
 	if(ret == -1)
 	{
