@@ -118,7 +118,7 @@ catkin_package(
 ###########
 ## Build ##
 ###########
-add_definitions(-DUSE_ROBOTIQ_FT)
+#add_definitions(-DUSE_ROBOTIQ_FT)
 
 
 # check c++11 / c++0x
