@@ -72,7 +72,7 @@ UrHardwareInterface::UrHardwareInterface(ros::NodeHandle& nh, UrDriver* robot) :
 
 	ROS_INFO_NAMED("ur_hardware_interface", "Loaded ur_hardware_interface.");
 
-	jnt_state_publisher_ = nh.advertise<sensor_msgs::JointState>("measured_joint_states", 1);
+	//jnt_state_publisher_ = nh.advertise<sensor_msgs::JointState>("measured_joint_states", 1);
 	jnt_state_publisher_2_ = nh.advertise<sensor_msgs::JointState>("ur10_commands", 1);
 }
 
@@ -125,7 +125,7 @@ void UrHardwareInterface::init() {
 		joint_velocity_limits_[i] = 2.0;//0.5*191*M_PI/180;
 	}
 
-	double vel_limit_alpha = 0.7;
+	double vel_limit_alpha = 0.95;
 	joint_velocity_limits_[0] = vel_limit_alpha*131*M_PI/180;
 	joint_velocity_limits_[1] = vel_limit_alpha*131*M_PI/180;
 	joint_velocity_limits_[2] = vel_limit_alpha*191*M_PI/180;
@@ -188,9 +188,14 @@ void UrHardwareInterface::read() {
 	double trq_alpha = 0.1;
 
 	for (std::size_t i = 0; i < num_joints_; ++i) {
+#if 0
 		joint_position_[i] = (1-pos_alpha)*pos[i] + pos_alpha*joint_position_[i];
 		joint_velocity_[i] = (1-vel_alpha)*vel[i] + vel_alpha*joint_velocity_[i];
 		joint_effort_[i] = (1-eff_alpha)*current[i] + eff_alpha*joint_effort_[i];
+#endif
+		joint_position_[i] = pos[i];
+		joint_velocity_[i] = vel[i];
+		joint_effort_[i] = current[i];
 	}
 
 #ifdef USE_ROBOTIQ_FT
@@ -237,6 +242,7 @@ void UrHardwareInterface::read() {
 	}
 #endif
 
+#if 0
 	// publish unfiltered joint state data
 	sensor_msgs::JointState msg;
 	msg.header.stamp = ros::Time::now();
@@ -246,10 +252,13 @@ void UrHardwareInterface::read() {
 		msg.effort.push_back(current[i]);
 	}
 	jnt_state_publisher_.publish(msg);
+#endif
+
 }
 
 void UrHardwareInterface::setMaxVelChange(double inp) {
 	max_vel_change_ = inp;
+	ROS_WARN("Setting max joint acceleration to %lf",inp);
 }
 
 void UrHardwareInterface::write() {
@@ -280,8 +289,11 @@ void UrHardwareInterface::write() {
 			msg.velocity.push_back(cmd[i]);
 		}
 		jnt_state_publisher_2_.publish(msg);
+#if 0
+#endif
 
 		robot_->setSpeed(cmd[0], cmd[1], cmd[2], cmd[3], cmd[4], cmd[5],  max_vel_change_*125);
+
 	} else if (position_interface_running_) {
 		robot_->servoj(joint_position_command_);
 	}
