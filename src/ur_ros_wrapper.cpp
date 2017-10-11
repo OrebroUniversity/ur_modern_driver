@@ -98,8 +98,9 @@ public:
 		    if (joint_prefix.length() > 0) {
     			sprintf(buf, "Setting prefix to %s", joint_prefix.c_str());
 	    		print_info(buf);
-	        }	
-        }
+		    }	
+		}
+
 		joint_names.push_back(joint_prefix + "shoulder_pan_joint");
 		joint_names.push_back(joint_prefix + "shoulder_lift_joint");
 		joint_names.push_back(joint_prefix + "elbow_joint");

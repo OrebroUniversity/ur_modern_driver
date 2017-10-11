@@ -133,7 +133,14 @@ protected:
 	double robot_torque_[3] = { 0., 0., 0. };
 
 	double max_vel_change_;
+	double vel_limit_alpha;
+	double pos_alpha;
+	double vel_alpha;
+	double eff_alpha;
+	double frc_alpha;
+	double trq_alpha;
 
+	bool low_pass_filter, publish_debug_js;
 	// Robot API
 	UrDriver* robot_;
 

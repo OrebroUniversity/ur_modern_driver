@@ -65,15 +65,33 @@ namespace ros_control_ur {
 
 UrHardwareInterface::UrHardwareInterface(ros::NodeHandle& nh, UrDriver* robot) :
 		nh_(nh), robot_(robot) {
-	// Initialize shared memory and interfaces here
-	init(); // this implementation loads from rosparam
 
+	ros::NodeHandle home("~");
 	max_vel_change_ = 0.12; // equivalent of an acceleration of 15 rad/sec^2
+	
+	home.param<double>("vel_limit_alpha",vel_limit_alpha,0.95);
+	home.param<double>("vel_alpha",vel_alpha,0.1);
+	home.param<double>("pos_alpha",pos_alpha,0.1);
+	home.param<double>("eff_alpha",eff_alpha,0.1);
+	home.param<double>("frc_alpha",frc_alpha,0.1);
+	home.param<double>("trq_alpha",trq_alpha,0.1);
+
+	home.param<bool>("low_pass_filter",low_pass_filter, false);
+	home.param<bool>("publish_debug_js",publish_debug_js, false);
 
 	ROS_INFO_NAMED("ur_hardware_interface", "Loaded ur_hardware_interface.");
 
-	//jnt_state_publisher_ = nh.advertise<sensor_msgs::JointState>("measured_joint_states", 1);
-	jnt_state_publisher_2_ = nh.advertise<sensor_msgs::JointState>("ur10_commands", 1);
+	if(low_pass_filter) {
+	    ROS_WARN("Velocities will be filtered, alpha is %lf",vel_alpha);
+	}
+	
+	if(publish_debug_js) {
+	    ROS_INFO("Publishing debug joint states");
+	    jnt_state_publisher_ = nh.advertise<sensor_msgs::JointState>("measured_joint_states", 1);
+	    jnt_state_publisher_2_ = nh.advertise<sensor_msgs::JointState>("ur10_commands", 1);
+	}
+	
+	init(); // this implementation loads from rosparam
 }
 
 void UrHardwareInterface::init() {
@@ -125,7 +143,6 @@ void UrHardwareInterface::init() {
 		joint_velocity_limits_[i] = 2.0;//0.5*191*M_PI/180;
 	}
 
-	double vel_limit_alpha = 0.95;
 	joint_velocity_limits_[0] = vel_limit_alpha*131*M_PI/180;
 	joint_velocity_limits_[1] = vel_limit_alpha*131*M_PI/180;
 	joint_velocity_limits_[2] = vel_limit_alpha*191*M_PI/180;
@@ -181,21 +198,17 @@ void UrHardwareInterface::read() {
 	current = robot_->rt_interface_->robot_state_->getIActual();
 	tcp = robot_->rt_interface_->robot_state_->getTcpForce();
 
-	double pos_alpha = 0.1;
-	double vel_alpha = 0.3;
-	double eff_alpha = 0.1;
-	double frc_alpha = 0.1;
-	double trq_alpha = 0.1;
 
 	for (std::size_t i = 0; i < num_joints_; ++i) {
-#if 0
+	    if(low_pass_filter) {		
 		joint_position_[i] = (1-pos_alpha)*pos[i] + pos_alpha*joint_position_[i];
 		joint_velocity_[i] = (1-vel_alpha)*vel[i] + vel_alpha*joint_velocity_[i];
 		joint_effort_[i] = (1-eff_alpha)*current[i] + eff_alpha*joint_effort_[i];
-#endif
+	    } else {
 		joint_position_[i] = pos[i];
 		joint_velocity_[i] = vel[i];
 		joint_effort_[i] = current[i];
+	    }
 	}
 
 #ifdef USE_ROBOTIQ_FT
@@ -237,21 +250,28 @@ void UrHardwareInterface::read() {
 
 #else
 	for (std::size_t i = 0; i < 3; ++i) {
+	    if(low_pass_filter) {		
 		robot_force_[i] = (1-frc_alpha)*tcp[i] + frc_alpha*robot_force_[i];
 		robot_torque_[i] = (1-trq_alpha)*tcp[i + 3] + trq_alpha*robot_torque_[i];
+	    } else {
+		robot_force_[i] =  tcp[i];
+		robot_torque_[i] = tcp[i + 3];
+	    }
 	}
 #endif
 
-#if 0
-	// publish unfiltered joint state data
-	sensor_msgs::JointState msg;
-	msg.header.stamp = ros::Time::now();
-	for (std::size_t i=0; i<num_joints_; ++i) {
+	if(publish_debug_js) {
+	    // publish unfiltered joint state data
+	    sensor_msgs::JointState msg;
+	    msg.header.stamp = ros::Time::now();
+	    for (std::size_t i=0; i<num_joints_; ++i) {
 		msg.position.push_back(pos[i]);
 		msg.velocity.push_back(vel[i]);
 		msg.effort.push_back(current[i]);
+	    }
+	    jnt_state_publisher_.publish(msg);
 	}
-	jnt_state_publisher_.publish(msg);
+#if 0
 #endif
 
 }
@@ -275,6 +295,7 @@ void UrHardwareInterface::write() {
 					< prev_joint_velocity_command_[i] - max_vel_change_) {
 				cmd[i] = prev_joint_velocity_command_[i] - max_vel_change_;
 			}
+
 			if (cmd[i] > joint_velocity_limits_[i]) {
 				cmd[i] = joint_velocity_limits_[i];
 			} else if (cmd[i] < -joint_velocity_limits_[i]) {
@@ -283,14 +304,15 @@ void UrHardwareInterface::write() {
 			prev_joint_velocity_command_[i] = cmd[i];
 		}
 
-		sensor_msgs::JointState msg;
-		msg.header.stamp = ros::Time::now();
-		for (std::size_t i=0; i<joint_velocity_command_.size(); ++i) {
+		if(publish_debug_js) {
+		    sensor_msgs::JointState msg;
+		    msg.header.stamp = ros::Time::now();
+		    for (std::size_t i=0; i<joint_velocity_command_.size(); ++i) {
 			msg.velocity.push_back(cmd[i]);
+			//msg.velocity.push_back(joint_velocity_command_[i]);
+		    }
+		    jnt_state_publisher_2_.publish(msg);
 		}
-		jnt_state_publisher_2_.publish(msg);
-#if 0
-#endif
 
 		robot_->setSpeed(cmd[0], cmd[1], cmd[2], cmd[3], cmd[4], cmd[5],  max_vel_change_*125);
 
